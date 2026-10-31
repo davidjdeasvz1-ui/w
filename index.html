@@ -1,0 +1,400 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Zero-Clutter Workout HUD</title>
+<style>
+:root{--bg:#0b0f14;--panel:#141b24;--text:#e8eef5;--mute:#8696a8;--go:#3ddc97;--warn:#ffb020;--rest:#4aa3ff}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,Segoe UI,sans-serif;display:flex;justify-content:center}
+main{width:100%;max-width:560px;padding:12px 16px 32px}
+.bypass{position:relative;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:18px;border-radius:16px;border:3px solid #5a4a1a;background:#201a0a;cursor:pointer;user-select:none;transition:.15s}
+.bypass.on{border-color:var(--warn);background:#4a3200;box-shadow:0 0 0 4px rgba(255,176,32,.25),0 0 28px rgba(255,176,32,.45)}
+.bypass input{position:absolute;opacity:0;inset:0;cursor:pointer}
+.bypass .txt{display:flex;flex-direction:column;gap:4px}
+.bypass .label{font-size:1.1rem;font-weight:800;letter-spacing:.04em}
+.bypass .state{font-size:.8rem;font-weight:700;color:var(--mute)}
+.bypass.on .state{color:var(--warn)}
+.track{flex:none;width:76px;height:40px;border-radius:20px;background:#3a3a3a;position:relative;transition:.15s}
+.track::after{content:"";position:absolute;top:4px;left:4px;width:32px;height:32px;border-radius:50%;background:#bbb;transition:.15s}
+.bypass.on .track{background:var(--warn)}
+.bypass.on .track::after{left:40px;background:#fff}
+.bypass:has(input:focus-visible){outline:3px solid #fff;outline-offset:3px}
+.row{display:flex;gap:12px;margin:12px 0}
+.row label{flex:1;display:flex;flex-direction:column;gap:6px;font-size:.75rem;color:var(--mute);text-transform:uppercase;letter-spacing:.08em}
+select{font:inherit;font-size:1.1rem;padding:12px;border-radius:12px;border:1px solid #2a3544;background:var(--panel);color:var(--text)}
+.hud{background:var(--panel);border-radius:20px;padding:20px 16px;text-align:center;border:2px solid #2a3544;transition:.15s}
+.hud.work{border-color:var(--go)}
+.hud.rest{border-color:var(--rest)}
+.phase{font-size:.9rem;font-weight:800;letter-spacing:.2em;color:var(--mute)}
+.work .phase{color:var(--go)}.rest .phase{color:var(--rest)}
+.name{font-size:1.6rem;font-weight:700;margin:8px 0 0;min-height:1.4em}
+.fig{display:block;width:100%;max-width:340px;height:auto;margin:6px auto 0;color:var(--mute)}
+.work .fig{color:var(--go)}.rest .fig{color:var(--rest)}
+.fig polyline{fill:none;stroke:currentColor;stroke-width:5;stroke-linecap:round;stroke-linejoin:round}
+.fig circle{fill:none;stroke:currentColor;stroke-width:5}
+.fig .far{opacity:.5}
+.fig .floor{stroke:#2a3544;stroke-width:2}
+.cue{color:var(--mute);font-size:.9rem;min-height:1.3em;margin-bottom:6px}
+.time{font-size:5rem;font-weight:800;font-variant-numeric:tabular-nums;line-height:1}
+.meta{margin-top:12px;color:var(--mute);font-size:.9rem}
+.bar{height:8px;border-radius:4px;background:#222c39;margin-top:16px;overflow:hidden}
+.bar i{display:block;height:100%;width:0;background:var(--go);transition:width .2s}
+.btns{display:flex;gap:10px;margin-top:16px}
+button{flex:1;font:inherit;font-weight:800;font-size:1.05rem;padding:16px;border:0;border-radius:14px;cursor:pointer;color:#06210f;background:var(--go)}
+button.sec{background:#2a3544;color:var(--text)}
+button:disabled{opacity:.35;cursor:not-allowed}
+button:focus-visible{outline:3px solid #fff;outline-offset:2px}
+ol{margin:16px 0 0;padding:0;list-style:none;display:grid;gap:6px}
+li{padding:10px 14px;border-radius:10px;background:var(--panel);color:var(--mute);font-size:.95rem}
+li.cur{color:var(--text);outline:2px solid var(--go)}
+li.done{opacity:.45;text-decoration:line-through}
+</style>
+</head>
+<body>
+<main>
+  <label class="bypass" id="bypassBox">
+    <span class="txt">
+      <span class="label">⚠️ SHOULDER DISCOMFORT BYPASS</span>
+      <span class="state" id="bypassState">OFF: full exercise library</span>
+    </span>
+    <input type="checkbox" id="bypass" role="switch" aria-label="Shoulder discomfort bypass">
+    <span class="track" aria-hidden="true"></span>
+  </label>
+
+  <div class="row">
+    <label>Workout Focus
+      <select id="focus">
+        <option value="hybrid">Hybrid (balanced)</option>
+        <option value="core">Core</option>
+        <option value="cardio">Cardio</option>
+        <option value="legs">Legs</option>
+      </select>
+    </label>
+  </div>
+  <div class="row">
+    <label>Exercise Count <select id="count"></select></label>
+    <label>Total Cycles <select id="cycles"></select></label>
+  </div>
+  <div class="row">
+    <label>Work (seconds) <select id="work"></select></label>
+    <label>Rest (seconds) <select id="rest"></select></label>
+  </div>
+
+  <section class="hud" id="hud" aria-live="polite">
+    <div class="phase" id="phase">READY</div>
+    <div class="name" id="name">Press Start</div>
+    <svg class="fig" id="fig" viewBox="0 -10 170 124" aria-hidden="true"></svg>
+    <div class="cue" id="cue"></div>
+    <div class="time" id="time">00:00</div>
+    <div class="meta" id="meta"></div>
+    <div class="bar"><i id="bar"></i></div>
+    <div class="btns">
+      <button id="start">Start</button>
+      <button id="pause" class="sec" disabled>Pause</button>
+      <button id="reset" class="sec">Reset</button>
+    </div>
+  </section>
+
+  <ol id="plan"></ol>
+</main>
+
+<script>
+(() => {
+  let WORK_SEC = 40, REST_SEC = 20;
+
+  // ---------- Exercise database ----------
+  const SHOULDER_LOADED = ['Push-ups','Pike Push-ups','Planks','Mountain Climbers','Burpees'];
+  const CATS = {
+    core:   ['Planks','Mountain Climbers','Deadbugs','Bicycle Crunches','Leg Raises','Flutter Kicks','Reverse Crunches'],
+    cardio: ['High Knees','Burpees','Mountain Climbers','Butt Kicks','Squat Jumps','Jog in Place'],
+    legs:   ['Squats','Lunges','Reverse Lunges','Glute Bridges','Wall Sits','Calf Raises','Good Mornings','Step-ups'],
+    upper:  ['Push-ups','Pike Push-ups','Doorframe Rows','Isometric Floor Chest Squeezes']
+  };
+
+  // ---------- Animation data ----------
+  // Pose = [head x,y, neck x,y, hip x,y, knee1, foot1, knee2, foot2, elbow1, wrist1, elbow2, wrist2] (x,y pairs)
+  const ST  = [100,16,100,27,100,57,102,81,101,104,98,81,99,104,103,42,105,56,99,42,101,56];
+  const HP  = [38,54,50,58,104,74,130,88,156,102,130,88,156,102,50,80,50,102,50,80,50,102];
+  const CR  = [114,56,106,64,90,88,112,86,98,104,112,86,98,104,114,84,122,102,114,84,122,102];
+  const DOOR = '<path d="M128 -10V105" stroke="#8696a8" stroke-width="6" fill="none"/>';
+  // name: [poses, seconds per pose, cue, prop]
+  const ANIM = {
+    'Bicycle Crunches': [[[36,88,46,92,80,100,100,76,114,92,112,90,142,94,52,80,40,86,46,78,38,86],[36,88,46,92,80,100,112,90,142,94,100,76,114,92,52,80,40,86,46,78,38,86]],.7,'Opposite elbow to knee, slow and controlled'],
+    'Leg Raises': [[[30,98,40,100,80,100,110,99,140,98,110,99,140,98,55,102,70,102,55,102,70,102],[30,98,40,100,80,100,84,68,86,38,84,68,86,38,55,102,70,102,55,102,70,102]],1.6,'Lower back stays down, legs straight'],
+    'Flutter Kicks': [[[32,92,42,96,80,100,110,90,140,80,110,98,140,96,55,102,70,102,55,102,70,102],[32,92,42,96,80,100,110,98,140,96,110,90,140,80,55,102,70,102,55,102,70,102]],.3,'Small fast kicks, core tight'],
+    'Reverse Crunches': [[[30,98,40,100,80,100,80,66,100,66,80,66,100,66,55,102,70,102,55,102,70,102],[30,98,40,100,76,92,62,72,80,78,62,72,80,78,55,102,70,102,55,102,70,102]],1.4,'Curl hips up using your abs, not momentum'],
+    'Butt Kicks': [[[100,16,100,27,100,57,100,81,80,70,100,81,100,104,92,44,86,56,110,44,118,36],[100,16,100,27,100,57,100,81,100,104,100,81,80,70,110,44,118,36,92,44,86,56]],.3,'Heels to glutes, quick and light'],
+    'Squat Jumps': [[[104,38,100,48,86,76,112,78,104,104,110,78,102,104,112,50,125,50,111,51,124,51],[100,6,100,17,100,47,102,70,101,88,98,70,99,88,108,32,118,22,106,32,116,22]],.6,'Land softly, go straight into the next squat'],
+    'Jog in Place': [[[100,16,100,27,100,57,112,76,110,96,100,81,100,104,92,42,86,52,110,42,118,34],[100,16,100,27,100,57,100,81,100,104,112,76,110,96,110,42,118,34,92,42,86,52]],.35,'Easy pace, relaxed arms'],
+    'Reverse Lunges': [[ST,[100,22,100,32,100,62,102,82,102,104,92,84,80,96,102,46,104,58,98,46,100,58],[100,37,100,47,100,76,116,76,114,104,86,96,68,104,102,60,104,72,98,60,100,72],[100,22,100,32,100,62,102,82,102,104,92,84,80,96,102,46,104,58,98,46,100,58]],.7,'Step back, lower straight down, push through the front heel'],
+    'Wall Sits': [[[64,28,64,40,64,76,94,76,94,104,92,76,92,104,70,60,84,74,70,60,84,74],[64,28,64,40,65,78,95,78,95,104,93,78,93,104,70,61,84,75,70,61,84,75]],.5,'HOLD: thighs parallel to floor, back flat on the wall','<path d="M52 -10V105" stroke="#8696a8" stroke-width="6" fill="none"/>'],
+    'Calf Raises': [[ST,[100,10,100,21,100,51,102,75,101,98,98,75,99,98,103,36,105,50,99,36,101,50]],1.1,'Rise high onto toes, lower slowly'],
+    'Good Mornings': [[ST,[121,44,112,48,84,58,92,82,100,104,90,82,98,104,114,64,114,82,114,64,114,82]],1.6,'Push hips back, flat back, soft knees'],
+    'Step-ups': [[[84,16,84,27,84,57,100,72,108,88,84,81,84,104,86,42,88,56,82,42,84,56],[112,0,112,11,112,41,113,65,112,88,126,58,124,74,114,26,116,40,110,26,112,40]],1.1,'Drive through the heel of the top foot (use a sturdy step)','<rect x="98" y="88" width="44" height="17" rx="2" fill="#2a3544"/>'],
+    'Squats': [[ST,[104,38,100,48,86,76,112,78,104,104,110,78,102,104,112,50,125,50,111,51,124,51]],1.3,'Sit hips back, chest up, knees over toes'],
+    'Lunges': [[ST,[100,37,100,47,100,76,120,76,120,104,92,98,74,104,102,60,104,72,98,60,100,72]],1.5,'Drop straight down, front knee over ankle'],
+    'High Knees': [[[100,16,100,27,100,57,118,58,116,80,100,81,100,104,92,42,86,52,108,42,116,34],[100,16,100,27,100,57,100,81,100,104,118,58,116,80,108,42,116,34,92,42,86,52]],.3,'Drive knees to hip height, stay light'],
+    'Glute Bridges': [[[30,98,40,100,80,100,100,74,112,102,98,74,110,102,56,102,70,102,56,102,70,102],[32,96,42,98,82,76,104,74,114,102,102,74,112,102,56,102,70,102,56,102,70,102]],1.5,'Drive through heels, squeeze glutes at the top'],
+    'Push-ups': [[HP,[40,90,52,92,104,98,130,100,156,102,130,100,156,102,66,86,50,102,66,86,50,102]],1.4,'Straight line head to heels, chest to floor'],
+    'Pike Push-ups': [[[56,74,62,66,96,40,113,72,130,102,113,72,130,102,56,84,50,102,56,84,50,102],[54,96,60,88,96,44,113,74,130,102,113,74,130,102,72,94,50,102,72,94,50,102]],1.5,'Hips high, lower the crown of your head'],
+    'Planks': [[[38,80,50,76,100,84,130,93,158,102,130,93,158,102,50,100,72,102,50,100,72,102],[38,78,50,76,100,80,130,91,158,102,130,91,158,102,50,100,72,102,50,100,72,102]],2.4,'HOLD: brace the core, breathe steadily'],
+    'Mountain Climbers': [[[38,54,50,58,104,72,82,78,96,98,130,88,156,102,50,80,50,102,50,80,50,102],[38,54,50,58,104,72,130,88,156,102,82,78,96,98,50,80,50,102,50,80,50,102]],.3,'Hips low, drive knees toward chest'],
+    'Burpees': [[ST,CR,[132,56,122,60,76,74,50,88,24,102,50,88,24,102,122,82,122,102,122,82,122,102],CR,[100,6,100,17,100,47,101,68,100,88,99,68,98,88,104,10,104,-2,104,10,104,-2]],.8,'Squat, kick back, return, jump'],
+    'Deadbugs': [[[30,98,40,100,80,100,106,90,136,98,80,66,100,66,40,85,40,70,26,102,10,102],[30,98,40,100,80,100,80,66,100,66,106,90,136,98,26,102,10,102,40,85,40,70]],1.6,'Opposite arm and leg, low back stays flat'],
+    'Doorframe Rows': [[[92,32,96,44,90,68,98,87,104,104,98,87,104,104,110,47,124,50,110,47,124,50],[104,32,108,44,102,68,104,87,104,104,104,87,104,104,110,60,124,50,110,60,124,50]],1.6,'Hold the frame, pull chest in, squeeze shoulder blades',DOOR],
+    'Isometric Floor Chest Squeezes': [[[30,98,40,100,80,100,100,74,112,102,98,74,110,102,50,86,44,70,50,86,44,70],[30,98,40,100,80,100,100,74,112,102,98,74,110,102,54,92,44,74,54,92,44,74]],1.8,'Press palms together firmly, hold the squeeze']
+  };
+
+  // ---------- Animation engine ----------
+  const NS = 'http://www.w3.org/2000/svg', fig = document.getElementById('fig');
+  const mk = (tag, at) => { const e = document.createElementNS(NS, tag); for (const k in at) e.setAttribute(k, at[k]); fig.appendChild(e); return e; };
+  mk('line', {x1:0,x2:170,y1:105,y2:105,class:'floor'});
+  const prop = mk('g', {});
+  const l2 = mk('polyline',{class:'far'}), a2 = mk('polyline',{class:'far'});
+  const torso = mk('polyline',{}), l1 = mk('polyline',{}), a1 = mk('polyline',{}), head = mk('circle',{r:7});
+  let cur = null, animName = '';
+  function pose(q) {
+    head.setAttribute('cx', q[0]); head.setAttribute('cy', q[1]);
+    torso.setAttribute('points', q[2]+','+q[3]+' '+q[4]+','+q[5]);
+    l1.setAttribute('points', q[4]+','+q[5]+' '+q[6]+','+q[7]+' '+q[8]+','+q[9]);
+    l2.setAttribute('points', q[4]+','+q[5]+' '+q[10]+','+q[11]+' '+q[12]+','+q[13]);
+    a1.setAttribute('points', q[2]+','+q[3]+' '+q[14]+','+q[15]+' '+q[16]+','+q[17]);
+    a2.setAttribute('points', q[2]+','+q[3]+' '+q[18]+','+q[19]+' '+q[20]+','+q[21]);
+  }
+  function frame(ts) {
+    if (cur) {
+      const P = cur[0], t = ts / 1000 / cur[1], n = P.length;
+      const i = Math.floor(t) % n, k = .5 - .5 * Math.cos(Math.PI * (t % 1));
+      const a = P[i], b = P[(i + 1) % n];
+      pose(a.map((v, j) => v + (b[j] - v) * k));
+    }
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+  function setAnim(name, prefix) {
+    const e = name && ANIM[name];
+    fig.style.visibility = e ? 'visible' : 'hidden';
+    $('cue').textContent = e ? (prefix || '') + e[2] : '';
+    if (name === animName) return;
+    animName = name; cur = e || null;
+    prop.innerHTML = e && e[3] ? e[3] : '';
+  }
+
+  // ---------- DOM ----------
+  const $ = id => document.getElementById(id);
+  const bypassEl = $('bypass'), bypassBox = $('bypassState').closest('.bypass');
+  const countEl = $('count'), cyclesEl = $('cycles'), workEl = $('work'), restEl = $('rest'), focusEl = $('focus');
+  const hud = $('hud'), startB = $('start'), pauseB = $('pause'), resetB = $('reset');
+
+  for (let i = 3; i <= 12; i++) countEl.add(new Option(i, i, false, i === 5));
+  for (let i = 1; i <= 8; i++) cyclesEl.add(new Option(i, i, false, i === 3));
+  for (let i = 10; i <= 120; i += 5) workEl.add(new Option(i, i, false, i === 40));
+  for (let i = 0; i <= 60; i += 5) restEl.add(new Option(i, i, false, i === 20));
+
+  try {
+    bypassEl.checked = localStorage.getItem('shoulderBypass') === '1';
+    const w = localStorage.getItem('workSec'), r = localStorage.getItem('restSec');
+    if (w) workEl.value = w;
+    if (r) restEl.value = r;
+    const f = localStorage.getItem('focus');
+    if (f) focusEl.value = f;
+  } catch (e) {}
+  WORK_SEC = +workEl.value; REST_SEC = +restEl.value;
+
+  // ---------- Generation engine ----------
+  function shuffle(a) {
+    a = a.slice();
+    for (let i = a.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [a[i], a[j]] = [a[j], a[i]];
+    }
+    return a;
+  }
+
+  function buildExercises() {
+    const bypass = bypassEl.checked, focus = focusEl.value, n = +countEl.value;
+    const ok = x => !bypass || !SHOULDER_LOADED.includes(x);
+    const pools = (focus === 'hybrid' ? ['core','cardio','legs','upper'] : [focus]).map(c => CATS[c].filter(ok));
+    const unique = new Set(pools.flat()).size;
+    const q = pools.map(shuffle);
+    let list = [], k = Math.floor(Math.random() * pools.length), guard = 0;
+    while (list.length < n && guard++ < 2000) {
+      const j = k++ % pools.length;
+      if (!q[j].length) q[j] = shuffle(pools[j]);
+      const x = q[j].shift();
+      if (x === list[list.length - 1] || (n <= unique && list.includes(x))) continue;
+      list.push(x);
+    }
+    // Final safety guard
+    if (bypass && list.some(x => SHOULDER_LOADED.includes(x))) throw new Error('Safety filter failure');
+    return list;
+  }
+
+  function buildSteps(exercises) {
+    const cycles = +cyclesEl.value, steps = [];
+    for (let c = 1; c <= cycles; c++) {
+      exercises.forEach((name, i) => {
+        steps.push({ type: 'work', name, dur: WORK_SEC, cycle: c, idx: i + 1 });
+        const last = c === cycles && i === exercises.length - 1;
+        if (!last && REST_SEC > 0) steps.push({ type: 'rest', name: 'Rest', dur: REST_SEC, cycle: c, idx: i + 1 });
+      });
+    }
+    return steps;
+  }
+
+  // ---------- Voice engine ----------
+  let voice = null;
+  function pickVoice() {
+    if (!('speechSynthesis' in window)) return;
+    const vs = speechSynthesis.getVoices();
+    if (!vs.length) return;
+    const en = vs.filter(v => /^en/i.test(v.lang));
+    const female = /female|samantha|victoria|karen|moira|tessa|fiona|zira|aria|jenny|susan|hazel|libby|sonia|allison|ava|serena|google us english/i;
+    const male = /\bmale\b/i;
+    voice = en.find(v => female.test(v.name) && !(male.test(v.name) && !/female/i.test(v.name)))
+         || en.find(v => v.localService) || en[0] || vs[0];
+  }
+  if ('speechSynthesis' in window) {
+    speechSynthesis.onvoiceschanged = pickVoice;
+    pickVoice();
+  }
+  function say(text) {
+    if (!('speechSynthesis' in window)) return;
+    speechSynthesis.cancel();
+    const u = new SpeechSynthesisUtterance(text);
+    if (voice) { u.voice = voice; u.lang = voice.lang; }
+    u.pitch = 1.05;
+    speechSynthesis.speak(u);
+  }
+
+  // ---------- Timer state ----------
+  let exercises = [], steps = [], idx = -1, remaining = 0, endAt = 0, running = false, timer = null, finished = false;
+
+  const fmt = ms => {
+    const s = Math.max(0, Math.ceil(ms / 1000));
+    return String(Math.floor(s / 60)).padStart(2, '0') + ':' + String(s % 60).padStart(2, '0');
+  };
+
+  function renderPlan() {
+    const ol = $('plan'); ol.innerHTML = '';
+    exercises.forEach((n, i) => {
+      const li = document.createElement('li');
+      li.textContent = (i + 1) + '. ' + n;
+      li.dataset.i = i; ol.appendChild(li);
+    });
+  }
+
+  function render() {
+    const s = steps[idx];
+    const next = steps.slice(idx + 1).find(x => x.type === 'work');
+    hud.className = 'hud' + (s && !finished ? ' ' + s.type : '');
+    $('phase').textContent = finished ? 'DONE' : s ? s.type.toUpperCase() : 'READY';
+    $('name').textContent = finished ? 'Workout complete' : s ? s.name : 'Press Start';
+    $('time').textContent = s && !finished ? fmt(remaining) : fmt(WORK_SEC * 1000);
+    const total = steps.length || 1;
+    $('bar').style.width = (finished ? 100 : idx < 0 ? 0 : (idx / total) * 100) + '%';
+    if (finished) setAnim(null);
+    else if (!s) setAnim(exercises[0], 'First up: ');
+    else if (s.type === 'work') setAnim(s.name);
+    else setAnim(next && next.name, 'Next: ');
+    if (s && !finished) {
+      $('meta').textContent = 'Cycle ' + s.cycle + '/' + cyclesEl.value + ' · Exercise ' + s.idx + '/' + exercises.length + (next ? ' · Next: ' + next.name : '');
+    } else {
+      $('meta').textContent = exercises.length + ' exercises × ' + cyclesEl.value + ' cycles · ' + WORK_SEC + 's work / ' + REST_SEC + 's rest';
+    }
+    document.querySelectorAll('#plan li').forEach(li => {
+      const i = +li.dataset.i;
+      li.classList.toggle('cur', !!s && s.type === 'work' && !finished && i === s.idx - 1);
+      li.classList.toggle('done', finished);
+    });
+    startB.disabled = running;
+    pauseB.disabled = !running;
+  }
+
+  function beginStep(i) {
+    idx = i;
+    const s = steps[idx];
+    remaining = s.dur * 1000;
+    endAt = Date.now() + remaining;
+    say(s.type === 'work' ? 'Begin ' + s.name : 'Rest');
+    render();
+  }
+
+  function tick() {
+    remaining = endAt - Date.now();
+    if (remaining <= 0) {
+      if (idx + 1 >= steps.length) {
+        stopTimer(); finished = true; running = false; say('Workout complete'); render(); return;
+      }
+      beginStep(idx + 1); return;
+    }
+    $('time').textContent = fmt(remaining);
+  }
+
+  function stopTimer() { clearInterval(timer); timer = null; }
+
+  function start() {
+    if (running) return;
+    if (finished) fullReset();
+    running = true;
+    if (idx < 0) beginStep(0);
+    else { endAt = Date.now() + remaining; render(); }
+    timer = setInterval(tick, 100);
+  }
+
+  function pause() {
+    if (!running) return;
+    running = false; stopTimer();
+    remaining = endAt - Date.now();
+    if ('speechSynthesis' in window) speechSynthesis.cancel();
+    render();
+  }
+
+  function fullReset() {
+    stopTimer(); running = false; finished = false; idx = -1; remaining = 0;
+    if ('speechSynthesis' in window) speechSynthesis.cancel();
+    render();
+  }
+
+  function regenerate() {
+    fullReset();
+    exercises = buildExercises();
+    steps = buildSteps(exercises);
+    renderPlan();
+    render();
+  }
+
+  // Changing durations keeps the current exercise list
+  function retime() {
+    WORK_SEC = +workEl.value; REST_SEC = +restEl.value;
+    try { localStorage.setItem('workSec', WORK_SEC); localStorage.setItem('restSec', REST_SEC); } catch (e) {}
+    fullReset();
+    steps = buildSteps(exercises);
+    render();
+  }
+
+  // ---------- Events ----------
+  function syncBypassUI() {
+    const on = bypassEl.checked;
+    bypassBox.classList.toggle('on', on);
+    $('bypassState').textContent = on ? 'ACTIVE: shoulder-safe movements only' : 'OFF: full exercise library';
+    try { localStorage.setItem('shoulderBypass', on ? '1' : '0'); } catch (e) {}
+  }
+  bypassEl.addEventListener('change', () => { syncBypassUI(); regenerate(); });
+  countEl.addEventListener('change', regenerate);
+  cyclesEl.addEventListener('change', regenerate);
+  focusEl.addEventListener('change', () => { try { localStorage.setItem('focus', focusEl.value); } catch (e) {} regenerate(); });
+  workEl.addEventListener('change', retime);
+  restEl.addEventListener('change', retime);
+  startB.addEventListener('click', start);
+  pauseB.addEventListener('click', pause);
+  resetB.addEventListener('click', fullReset);
+
+  syncBypassUI();
+  regenerate();
+})();
+</script>
+</body>
+</html>
